@@ -1,17 +1,19 @@
-from alayatodo import app
+from alayatodo import app, db
+from alayatodo.models import Users, Todos
+from http import HTTPStatus
 from flask import (
-    g,
     redirect,
     render_template,
     request,
-    session
+    session,
+    jsonify
     )
 
 
 @app.route('/')
 def home():
     with app.open_resource('../README.md', mode='r') as f:
-        readme = "".join(l.decode('utf-8') for l in f)
+        readme = "".join(l for l in f)
         return render_template('index.html', readme=readme)
 
 
@@ -24,12 +26,16 @@ def login():
 def login_POST():
     username = request.form.get('username')
     password = request.form.get('password')
-
-    sql = "SELECT * FROM users WHERE username = '%s' AND password = '%s'";
-    cur = g.db.execute(sql % (username, password))
-    user = cur.fetchone()
+    """
+    dbuser = Users(username=username, password=password)
+    db.session.add(dbuser)
+    db.session.commit()
+    """
+    print((username, password))
+    user = Users.query.filter(Users.username == username, Users.password == password).first()
+    print(user)
     if user:
-        session['user'] = dict(user)
+        session['user'] = {'id': user.id, 'username': user.username}
         session['logged_in'] = True
         return redirect('/todo')
 
@@ -45,9 +51,27 @@ def logout():
 
 @app.route('/todo/<id>', methods=['GET'])
 def todo(id):
-    cur = g.db.execute("SELECT * FROM todos WHERE id ='%s'" % id)
-    todo = cur.fetchone()
+    if not session.get('logged_in'):
+        return redirect('/login')
+    todo = Todos.query.filter(Todos.id == id).first_or_404()
     return render_template('todo.html', todo=todo)
+
+
+@app.route('/todo/<id>/json', methods=['GET'])
+def todo_json(id):
+    if not session.get('logged_in'):
+        return redirect('/login')
+    todo = Todos.query.filter(Todos.id == id).first()
+    if todo:
+        result = {
+            'id': todo.id,
+            'user_id': todo.user_id,
+            'description': todo.description,
+            'status': todo.status
+        }
+        return jsonify(result), HTTPStatus.OK
+    else:
+        return jsonify({'message': 'No todo with id found'}), HTTPStatus.NOT_FOUND
 
 
 @app.route('/todo', methods=['GET'])
@@ -55,8 +79,8 @@ def todo(id):
 def todos():
     if not session.get('logged_in'):
         return redirect('/login')
-    cur = g.db.execute("SELECT * FROM todos")
-    todos = cur.fetchall()
+    user = session['user']
+    todos = Todos.query.filter(Todos.user_id == user['id']).all()
     return render_template('todos.html', todos=todos)
 
 
@@ -65,18 +89,38 @@ def todos():
 def todos_POST():
     if not session.get('logged_in'):
         return redirect('/login')
-    g.db.execute(
-        "INSERT INTO todos (user_id, description) VALUES ('%s', '%s')"
-        % (session['user']['id'], request.form.get('description', ''))
-    )
-    g.db.commit()
-    return redirect('/todo')
+    description = request.form.get('description', '')
+    if description and description != '':
+        user = session['user']
+        todo = Todos(user_id=user['id'], description=description)
+        db.session.add(todo)
+        db.session.commit()
+        return redirect('/todo')
+    else:
+        return render_template('error.html', error='Description can not be empty')
 
 
 @app.route('/todo/<id>', methods=['POST'])
 def todo_delete(id):
     if not session.get('logged_in'):
         return redirect('/login')
-    g.db.execute("DELETE FROM todos WHERE id ='%s'" % id)
-    g.db.commit()
-    return redirect('/todo')
+    todo = Todos.query.filter(Todos.id == id).first()
+    if todo:
+        db.session.delete(todo)
+        db.session.commit()
+        return redirect('/todo')
+    else:
+        return render_template('error.html', error='Todo with provided id not found')
+
+
+@app.route('/todo/<id>/done', methods=['POST'])
+def todo_done(id):
+    if not session.get('logged_in'):
+        return redirect('/login')
+    todo = Todos.query.filter(Todos.id == id).first()
+    if todo:
+        todo.status = 'DONE'
+        db.session.commit()
+        return redirect('/todo')
+    else:
+        return render_template('error.html', error='Todo with provided id not found')
