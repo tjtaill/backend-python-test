@@ -6,7 +6,8 @@ from flask import (
     render_template,
     request,
     session,
-    jsonify
+    jsonify,
+    flash
     )
 
 
@@ -26,19 +27,12 @@ def login():
 def login_POST():
     username = request.form.get('username')
     password = request.form.get('password')
-    """
-    dbuser = Users(username=username, password=password)
-    db.session.add(dbuser)
-    db.session.commit()
-    """
-    print((username, password))
     user = Users.query.filter(Users.username == username, Users.password == password).first()
-    print(user)
     if user:
         session['user'] = {'id': user.id, 'username': user.username}
         session['logged_in'] = True
-        return redirect('/todo')
-
+        return redirect('/todos')
+    flash('Invalid Credentials')
     return redirect('/login')
 
 
@@ -53,7 +47,13 @@ def logout():
 def todo(id):
     if not session.get('logged_in'):
         return redirect('/login')
-    todo = Todos.query.filter(Todos.id == id).first_or_404()
+    todo = Todos.query.filter(Todos.id == id).first()
+    if not todo:
+        return render_template('error.html', error='Todo with provided id not found')
+
+    user_id = session['user']['id']
+    if todo.user_id != user_id:
+        return render_template('error.html', error='Can not view todo which does not belong to you')
     return render_template('todo.html', todo=todo)
 
 
@@ -62,18 +62,24 @@ def todo_json(id):
     if not session.get('logged_in'):
         return redirect('/login')
     todo = Todos.query.filter(Todos.id == id).first()
-    if todo:
-        result = {
-            'id': todo.id,
-            'user_id': todo.user_id,
-            'description': todo.description,
-            'status': todo.status
-        }
-        return jsonify(result), HTTPStatus.OK
-    else:
+
+    if not todo:
         return jsonify({'message': 'No todo with id found'}), HTTPStatus.NOT_FOUND
 
+    user_id = session['user']['id']
+    if todo.user_id != user_id:
+        return jsonify({'message': 'Can not view todo which does not belong to you'}), HTTPStatus.FORBIDDEN
 
+    result = {
+        'id': todo.id,
+        'user_id': todo.user_id,
+        'description': todo.description,
+        'status': todo.status
+    }
+    return jsonify(result), HTTPStatus.OK
+
+
+"""
 @app.route('/todo', methods=['GET'])
 @app.route('/todo/', methods=['GET'])
 def todos():
@@ -82,6 +88,33 @@ def todos():
     user = session['user']
     todos = Todos.query.filter(Todos.user_id == user['id']).all()
     return render_template('todos.html', todos=todos)
+"""
+
+
+@app.route('/todos', methods=['GET'])
+@app.route('/todos/<int:page>', methods=['GET'])
+def todos(page=1):
+    if not session.get('logged_in'):
+        return redirect('/login')
+    user = session['user']
+    todos = Todos.query.filter(Todos.user_id == user['id']).paginate(page, per_page=2)
+    return render_template('todos.html', todos=todos)
+
+    """
+    try:
+        users_list = User.query.order_by(
+            User.id.desc()
+        ).paginate(page, per_page=USERS_PER_PAGE)
+    except OperationalError:
+        flash("No users in the database.")
+        users_list = None
+
+    return render_template(
+        'users.html',
+        users_list=users_list,
+        form=form
+    )
+"""
 
 
 @app.route('/todo', methods=['POST'])
@@ -105,12 +138,15 @@ def todo_delete(id):
     if not session.get('logged_in'):
         return redirect('/login')
     todo = Todos.query.filter(Todos.id == id).first()
-    if todo:
-        db.session.delete(todo)
-        db.session.commit()
-        return redirect('/todo')
-    else:
+    if not todo:
         return render_template('error.html', error='Todo with provided id not found')
+    user_id = session['user']['id']
+    if todo.user_id != user_id:
+        return render_template('error.html', error='Can delete a todo that does not belong to you')
+
+    db.session.delete(todo)
+    db.session.commit()
+    return redirect('/todo')
 
 
 @app.route('/todo/<id>/done', methods=['POST'])
@@ -118,9 +154,9 @@ def todo_done(id):
     if not session.get('logged_in'):
         return redirect('/login')
     todo = Todos.query.filter(Todos.id == id).first()
-    if todo:
-        todo.status = 'DONE'
-        db.session.commit()
-        return redirect('/todo')
-    else:
+    if not todo:
         return render_template('error.html', error='Todo with provided id not found')
+
+    todo.status = 'DONE'
+    db.session.commit()
+    return redirect('/todo')
