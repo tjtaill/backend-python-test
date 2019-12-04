@@ -15,7 +15,7 @@
                         </a>
                     </td>
                     <td>
-                        <form method="post" action="{{ url_for('todo_delete', id=todo.id) }}">
+                        <form method="post" action="{{ url_for('todo_delete', id=todo.id) }}" onsubmit="return confirm('Are you sure you want to delete this todo?');">
                             <button type="submit" class="btn btn-xs btn-danger"><span class="glyphicon glyphicon-remove glyphicon-white"></span></button>
                         </form>
                     </td>
@@ -27,7 +27,7 @@
                 </tr>
             {% endfor %}
             <tr>
-                <form method="post" action="{{ url_for('todos_POST') }}">
+                <form method="post" action="{{ url_for('todos_POST') }}" onsubmit="return confirm('Are you sure you want to add this todo?');">
                     <td colspan="3">
                         <input type="textbox" name="description" class="small-6 small-center" placeholder="Description...">
                     </td>

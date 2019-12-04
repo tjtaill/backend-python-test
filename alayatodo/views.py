@@ -1,5 +1,3 @@
-from alayatodo import app, db
-from alayatodo.models import Users, Todos
 from http import HTTPStatus
 from flask import (
     redirect,
@@ -9,6 +7,8 @@ from flask import (
     jsonify,
     flash
     )
+from alayatodo import app, db
+from alayatodo.models import Users, Todos
 
 
 @app.route('/')
@@ -49,11 +49,13 @@ def todo(id):
         return redirect('/login')
     todo = Todos.query.filter(Todos.id == id).first()
     if not todo:
-        return render_template('error.html', error='Todo with provided id not found')
+        return (render_template('error.html', error='Todo with provided id not found'),
+                HTTPStatus.NOT_FOUND)
 
     user_id = session['user']['id']
     if todo.user_id != user_id:
-        return render_template('error.html', error='Can not view todo which does not belong to you')
+        return (render_template('error.html', error='Can not view todo which does not belong to you'),
+                HTTPStatus.FORBIDDEN)
     return render_template('todo.html', todo=todo)
 
 
@@ -79,18 +81,6 @@ def todo_json(id):
     return jsonify(result), HTTPStatus.OK
 
 
-"""
-@app.route('/todo', methods=['GET'])
-@app.route('/todo/', methods=['GET'])
-def todos():
-    if not session.get('logged_in'):
-        return redirect('/login')
-    user = session['user']
-    todos = Todos.query.filter(Todos.user_id == user['id']).all()
-    return render_template('todos.html', todos=todos)
-"""
-
-
 @app.route('/todos', methods=['GET'])
 @app.route('/todos/<int:page>', methods=['GET'])
 def todos(page=1):
@@ -99,22 +89,6 @@ def todos(page=1):
     user = session['user']
     todos = Todos.query.filter(Todos.user_id == user['id']).paginate(page, per_page=2)
     return render_template('todos.html', todos=todos)
-
-    """
-    try:
-        users_list = User.query.order_by(
-            User.id.desc()
-        ).paginate(page, per_page=USERS_PER_PAGE)
-    except OperationalError:
-        flash("No users in the database.")
-        users_list = None
-
-    return render_template(
-        'users.html',
-        users_list=users_list,
-        form=form
-    )
-"""
 
 
 @app.route('/todo', methods=['POST'])
@@ -128,9 +102,9 @@ def todos_POST():
         todo = Todos(user_id=user['id'], description=description)
         db.session.add(todo)
         db.session.commit()
-        return redirect('/todo')
+        return redirect('/todos')
     else:
-        return render_template('error.html', error='Description can not be empty')
+        return render_template('error.html', error='Description can not be empty'), HTTPStatus.BAD_REQUEST
 
 
 @app.route('/todo/<id>', methods=['POST'])
@@ -139,14 +113,15 @@ def todo_delete(id):
         return redirect('/login')
     todo = Todos.query.filter(Todos.id == id).first()
     if not todo:
-        return render_template('error.html', error='Todo with provided id not found')
+        return render_template('error.html', error='Todo with provided id not found'). HTTPStatus.NOT_FOUND
     user_id = session['user']['id']
     if todo.user_id != user_id:
-        return render_template('error.html', error='Can delete a todo that does not belong to you')
+        return (render_template('error.html', error='Can delete a todo that does not belong to you'),
+                HTTPStatus.FORBIDDEN)
 
     db.session.delete(todo)
     db.session.commit()
-    return redirect('/todo')
+    return redirect('/todos')
 
 
 @app.route('/todo/<id>/done', methods=['POST'])
@@ -155,8 +130,8 @@ def todo_done(id):
         return redirect('/login')
     todo = Todos.query.filter(Todos.id == id).first()
     if not todo:
-        return render_template('error.html', error='Todo with provided id not found')
+        return render_template('error.html', error='Todo with provided id not found'), HTTPStatus.NOT_FOUND
 
     todo.status = 'DONE'
     db.session.commit()
-    return redirect('/todo')
+    return redirect('/todos')
